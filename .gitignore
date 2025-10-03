@@ -1,0 +1,9 @@
+kosr/checkpoint/
+*.pth
+*.pt
+*.tar
+*.egg
+*.wav
+*.mp3
+.DS_Store
+__pycache__/
