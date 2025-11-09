@@ -1,39 +1,24 @@
-import torch 
-from transformers import WhisperForConditionalGeneration, WhisperProcessor
-from peft import PeftModel
 import librosa
 import io
+import os
+from whisper_ctranslate2 import WhisperModel 
+from transformers import WhisperProcessor
 
-MODEL_PATH="./models/"
-BASE_MODEL_NAME="openai/whisper-small"
+MODEL_PATH = "./models_ct2"
+DEVICE = "cpu"
 
 model = None
 processor = None
-forced_decoder_ids = None
-
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 def load_model():
-    global model, processor, forced_decoder_ids
-
+    global model, processor
+    
     if model is None:
-        print("🚀 Whisper 모델을 로드하는 중...")
-        processor = WhisperProcessor.from_pretrained(BASE_MODEL_NAME,language="korean", task="transcribe")
+        print("🚀 CTranslate2 Whisper 모델을 로드하는 중...")
+        model = WhisperModel(MODEL_PATH, device=DEVICE, compute_type="int8")
+        processor = WhisperProcessor.from_pretrained(MODEL_PATH)
         
-        base_model = WhisperForConditionalGeneration.from_pretrained(
-            BASE_MODEL_NAME
-        )
-
-        # 어댑터 병합 
-        model = PeftModel.from_pretrained(base_model, MODEL_PATH)
-        model = model.to(DEVICE)
-        model.eval()
-
-        forced_decoder_ids = processor.get_decoder_prompt_ids(
-            language="korean", task="transcribe"
-        )
-
-        print("✅ 모델 로드 완료.")
+        print("✅ CTranslate2 모델 로드 완료.")
 
 def transcribe_audio_file(audio_bytes:bytes) -> str:
     if model is None or processor is None:
@@ -41,25 +26,16 @@ def transcribe_audio_file(audio_bytes:bytes) -> str:
     
     audio_steam = io.BytesIO(audio_bytes)
     speech_array, _ = librosa.load(audio_steam, sr=16000, mono=True)
-
-    input_features = processor(
-        speech_array, 
-        sample_rate=16000, 
-        return_tensors="pt"
-    ).input_features
-
-    input_features = input_features.to(DEVICE)
     
-    with torch.no_grad():
-        predicted_ids = model.generate(
-            input_features,
-            forced_decoder_ids=forced_decoder_ids
-        )
-        
-    # 결과 디코딩
-    transcription = processor.batch_decode(
-        predicted_ids, 
-        skip_special_tokens=True
-    )[0]
+    print("Running CTranslate2 inference...")
+    
+    segments, info = model.transcribe(
+        speech_array,
+        language="ko", 
+        task="transcribe",
+        without_timestamps=True,
+    )
+
+    transcription = "".join(segment.text for segment in segments)
     
     return transcription.strip()
